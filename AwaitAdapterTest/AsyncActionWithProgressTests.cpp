@@ -12,12 +12,12 @@ using namespace winrt_await_adapters;
 
 namespace AwaitAdapterTest
 {
-    IAsyncActionWithProgress<double>^ ComputePrimesWithProgressAsync(int first, int last, std::shared_ptr<bool> done)
+    IAsyncActionWithProgress<double>^ ComputePrimesWithProgressAsync(int first, int last, bool& done)
     {
         auto UIContext = await_resume_context::current();
         co_await await_resume_context::any().get_awaitable();
         
-        auto pr = co_await get_progress_reporter<IAsyncActionWithProgress<double>, double>();
+        auto pr = co_await get_progress_reporter<double>();
 
         // Ensure that the input values are in range.
         if (first < 0 || last < 0)
@@ -48,7 +48,7 @@ namespace AwaitAdapterTest
 
         pr.report_progress(100.0);
 
-        *done = true;
+        done = true;
         return;
     }
 
@@ -58,9 +58,9 @@ namespace AwaitAdapterTest
 
         TEST_METHOD(AwaitInIAsyncActionWithProgress)
         {
-            std::shared_ptr<bool> done = std::make_shared<bool>(false);
-            std::shared_ptr<bool> failed = std::make_shared<bool>(false);
-            std::shared_ptr<Concurrency::event> ev = std::make_shared<Concurrency::event>();
+            bool done = false;
+            bool failed = false;
+            event ev;
             std::atomic<double> progressCounter = 0;
             int first = 1, last = 100;
             IAsyncActionWithProgress<double>^ op = ComputePrimesWithProgressAsync(first, last, done);
@@ -69,76 +69,76 @@ namespace AwaitAdapterTest
                 progressCounter.exchange(progressval);
             });
 
-            op->Completed = ref new AsyncActionWithProgressCompletedHandler<double>([ev, failed](IAsyncActionWithProgress<double>^ action, AsyncStatus status)
+            op->Completed = ref new AsyncActionWithProgressCompletedHandler<double>([&](IAsyncActionWithProgress<double>^ action, AsyncStatus status)
             {
                 if (status != AsyncStatus::Completed)
-                    *failed = true;
+                    failed = true;
 
-                ev->set();
+                ev.set();
             });
 
-            ev->wait();
+            ev.wait();
             Assert::IsTrue(progressCounter == 100, L"Progress reporting not as expected.");
-            Assert::IsTrue(*done == true, L"await in IAsyncAction did not complete.");
-            Assert::IsTrue(*failed == false, L"IAsyncAction did not complete.");
+            Assert::IsTrue(done == true, L"await in IAsyncAction did not complete.");
+            Assert::IsTrue(failed == false, L"IAsyncAction did not complete.");
         }
 
         TEST_METHOD(ThrowIAsyncActionWithProgress)
         {
-            std::shared_ptr<bool> spDone = std::make_shared<bool>(false);
-            std::shared_ptr<bool> spFailed = std::make_shared<bool>(false);
-            std::shared_ptr<Concurrency::event> ev = std::make_shared<Concurrency::event>();
-            std::shared_ptr<int> progress_counter = std::make_shared<int>(0);
+            bool done = false;
+            bool failed = false;
+            event ev;
+            int progress_counter = 0;
             int first = -1, last = -1;
 
-            IAsyncActionWithProgress<double>^ op = ComputePrimesWithProgressAsync(first, last, spDone);
-            op->Progress = ref new AsyncActionProgressHandler<double>([progress_counter](IAsyncActionWithProgress<double>^ action, double progressval)
+            IAsyncActionWithProgress<double>^ op = ComputePrimesWithProgressAsync(first, last, done);
+            op->Progress = ref new AsyncActionProgressHandler<double>([&](IAsyncActionWithProgress<double>^ action, double progressval)
             {
-                *progress_counter = *progress_counter + 1;
+                progress_counter = progress_counter + 1;
             });
 
-            op->Completed = ref new AsyncActionWithProgressCompletedHandler<double>([ev, spFailed](IAsyncActionWithProgress<double>^ action, AsyncStatus status)
+            op->Completed = ref new AsyncActionWithProgressCompletedHandler<double>([&](IAsyncActionWithProgress<double>^ action, AsyncStatus status)
             {
                 if (status == AsyncStatus::Error && action->Status == AsyncStatus::Error && FAILED(action->ErrorCode.Value))
-                    *spFailed = true;
+                    failed = true;
 
-                ev->set();
+                ev.set();
             });
 
             // Wait for the prime computation to complete
-            auto ret = ev->wait(IASYNC_AWAIT_TEST_TIMEOUT);
+            auto ret = ev.wait(IASYNC_AWAIT_TEST_TIMEOUT);
             Assert::AreEqual<int>(0, ret, L"IAsyncActionWithProgress Completed handler not called.");
-            Assert::IsFalse(*spDone, L"await in IAsyncActionWithProgress completed, exception did not propagate and cancel the await.");
-            Assert::IsTrue(*spFailed, L"IAsyncActionWithProgress error did not propagate.");
+            Assert::IsFalse(done, L"await in IAsyncActionWithProgress completed, exception did not propagate and cancel the await.");
+            Assert::IsTrue(failed, L"IAsyncActionWithProgress error did not propagate.");
         }
 
         TEST_METHOD(CancelIAsyncActionWithProgress)
         {
-            std::shared_ptr<bool> spDone = std::make_shared<bool>(false);
-            std::shared_ptr<unsigned int> spPrimeCountActual = std::make_shared<unsigned int>(0);
-            std::shared_ptr<bool> spFailed = std::make_shared<bool>(false); // Completed Handler sets this variable to notify if the test failed.
-            std::shared_ptr<Concurrency::event> ev = std::make_shared<Concurrency::event>();
-            std::shared_ptr<int> progress_counter = std::make_shared<int>(0);
+            bool done = false;
+            unsigned int primeCountActual = 0;
+            bool failed = false; // Completed Handler sets this variable to notify if the test failed.
+            event ev;
+            int progress_counter = 0;
             int first = 1, last = 100;
 
-            IAsyncActionWithProgress<double>^ op = ComputePrimesWithProgressAsync(first, last, spDone);
-            op->Progress = ref new AsyncActionProgressHandler<double>([progress_counter](IAsyncActionWithProgress<double>^ action, double progressval)
+            IAsyncActionWithProgress<double>^ op = ComputePrimesWithProgressAsync(first, last, done);
+            op->Progress = ref new AsyncActionProgressHandler<double>([&](IAsyncActionWithProgress<double>^ action, double progressval)
             {
-                *progress_counter = *progress_counter + 1;
+                progress_counter = progress_counter + 1;
             });
 
-            op->Completed = ref new AsyncActionWithProgressCompletedHandler<double>([ev, spFailed](IAsyncActionWithProgress<double>^ action, AsyncStatus status)
+            op->Completed = ref new AsyncActionWithProgressCompletedHandler<double>([&](IAsyncActionWithProgress<double>^ action, AsyncStatus status)
             {				
                 if (status != AsyncStatus::Canceled || action->Status != AsyncStatus::Canceled)
-                    *spFailed = true;
+                    failed = true;
 
-                ev->set();
+                ev.set();
             });
 
             op->Cancel();
             // Wait for the prime computation to complete
-            auto ret = ev->wait(IASYNC_AWAIT_TEST_TIMEOUT);
-            Assert::IsFalse(*spFailed, L"IAsyncAction status != Cancelled.");
+            auto ret = ev.wait(IASYNC_AWAIT_TEST_TIMEOUT);
+            Assert::IsFalse(failed, L"IAsyncAction status != Cancelled.");
         }
     };
 }
