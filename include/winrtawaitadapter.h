@@ -16,10 +16,14 @@
 #ifndef _WINRT_AWAITADAPTER_H
 #define _WINRT_AWAITADAPTER_H
 
-namespace winrt_await_adapters
-{
 #ifdef __cplusplus_winrt
 
+#include <exception>
+#include <winerror.h>
+#include <intrin.h>
+#include <experimental\coroutine>
+namespace winrt_await_adapters
+{
     //
     // Base class for the promise returned for asynchronous actions and operations.
     //
@@ -54,6 +58,10 @@ namespace winrt_await_adapters
             {
                 return m_id;
             }
+            void set(unsigned int id)
+            {
+                m_id = id;
+            }
         }
 
         // IAsyncInfo property: value that indicates the status of the asynchronous action/operation.
@@ -70,23 +78,17 @@ namespace winrt_await_adapters
         }
 
     internal:
-        _AsyncInfoPromiseBase():
+        _AsyncInfoPromiseBase() :
             m_status(Windows::Foundation::AsyncStatus::Started)
         {
-            m_id = GetNextAsyncId();
+            m_id = 1;
             m_errorcode.Value = S_OK;
         }
 
-        void set_error(Platform::Exception^ ex)
+        void _SetError(Platform::Exception^ ex)
         {
             Status = Windows::Foundation::AsyncStatus::Error;
             m_errorcode.Value = ex->HResult;
-        }
-
-        static unsigned int GetNextAsyncId()
-        {
-            static long s_asyncId = 0;
-            return static_cast<unsigned int>(_InterlockedIncrement(&s_asyncId));
         }
 
         Windows::Foundation::HResult m_errorcode;
@@ -95,24 +97,25 @@ namespace winrt_await_adapters
     };
 
     template <typename _Attributes>
-    ref class _AsyncActionPromise :public _AsyncInfoPromiseBase, public _Attributes::_AsyncBaseType
+    ref class _AsyncActionPromise : public _AsyncInfoPromiseBase, public _Attributes::_AsyncBaseType
     {
+        using _CompletionDelegateType = typename _Attributes::_CompletionDelegateType;
     public:
         virtual void GetResults()
         {
         }
 
         // Get/set the method that handles the action completed notification.
-        virtual property typename _Attributes::_CompletionDelegateType^ Completed
+        virtual property _CompletionDelegateType^ Completed
         {
-            typename _Attributes::_CompletionDelegateType^ get()
+            _CompletionDelegateType^ get()
             {
-                return m_completedhandler;
+                return m_completedHandler;
             }
 
-            void set(typename _Attributes::_CompletionDelegateType^ _CompleteHandler)
+            void set(_CompletionDelegateType^ _CompletedHandler)
             {
-                m_completedhandler = _CompleteHandler;
+                m_completedHandler = _CompletedHandler;
             }
         }
 
@@ -126,7 +129,7 @@ namespace winrt_await_adapters
             _AsyncInfoPromiseBase::Close();
         }
 
-        virtual property Windows::Foundation::HResult ErrorCode 
+        property Windows::Foundation::HResult ErrorCode
         {
             Windows::Foundation::HResult get() override
             {
@@ -134,15 +137,19 @@ namespace winrt_await_adapters
             }
         }
 
-        virtual property unsigned int Id
+        property unsigned int Id
         {
             unsigned int get() override
             {
                 return _AsyncInfoPromiseBase::Id;
             }
+            void set(unsigned int id) override
+            {
+                _AsyncInfoPromiseBase::Id = id;
+            }
         }
 
-        virtual property Windows::Foundation::AsyncStatus Status
+        property Windows::Foundation::AsyncStatus Status
         {
             Windows::Foundation::AsyncStatus get() override
             {
@@ -156,32 +163,34 @@ namespace winrt_await_adapters
 
     internal:
         // Called by promise_type::return_void for AsyncActionPromise coroutine_traits
-        void invoke_completion()
+        void _InvokeCompletion()
         {
             // If Status is already set to Canceled/Error, retain the state.
             if (Status == Windows::Foundation::AsyncStatus::Started)
                 Status = Windows::Foundation::AsyncStatus::Completed;
 
-            if (m_completedhandler)
+            if (m_completedHandler)
             {
-                m_completedhandler->Invoke(this, Status);
+                m_completedHandler->Invoke(this, Status);
             }
         }
 
         // Called by coroutine_traits::promise_type::set_exception to propagate the error.
         // There is no way to propagate the Exception message.
-        void set_error(Platform::Exception^ ex)
+        void _SetError(Platform::Exception^ ex)
         {
-            _AsyncInfoPromiseBase::set_error(ex);
-            invoke_completion();
+            _AsyncInfoPromiseBase::_SetError(ex);
+            _InvokeCompletion();
         }
 
-        typename _Attributes::_CompletionDelegateType^  volatile  m_completedhandler;
+        _CompletionDelegateType^  m_completedHandler;
     };
 
     template <typename _Attributes>
-    ref class _AsyncActionWithProgressPromise: public _AsyncInfoPromiseBase, public _Attributes::_AsyncBaseType
+    ref class _AsyncActionWithProgressPromise : public _AsyncInfoPromiseBase, public _Attributes::_AsyncBaseType
     {
+        using _CompletionDelegateType = typename _Attributes::_CompletionDelegateType;
+        using _ProgressDelegateType = typename _Attributes::_ProgressDelegateType;
     public:
         void Close() override
         {
@@ -203,9 +212,13 @@ namespace winrt_await_adapters
 
         virtual property unsigned int Id
         {
-            virtual unsigned int get() override
+            unsigned int get() override
             {
                 return _AsyncInfoPromiseBase::Id;
+            }
+            void set(unsigned int id) override
+            {
+                _AsyncInfoPromiseBase::Id = id;
             }
         }
 
@@ -225,70 +238,73 @@ namespace winrt_await_adapters
         {
         }
 
-        virtual property typename _Attributes::_ProgressDelegateType^ Progress
+        virtual property _ProgressDelegateType^ Progress
         {
-            typename _Attributes::_ProgressDelegateType^ get()
+            _ProgressDelegateType^ get()
             {
-                return m_progresshandler;
+                return m_progressHandler;
             }
 
-            void set(typename _Attributes::_ProgressDelegateType^ progresshandler)
+            void set(_ProgressDelegateType^ progressHandler)
             {
-                m_progresshandler = progresshandler;
+                m_progressHandler = progressHandler;
             }
         }
 
         // Get/set the method that handles the action/operation completed notification.
-        virtual property typename _Attributes::_CompletionDelegateType^ Completed
+        virtual property _CompletionDelegateType^ Completed
         {
-            typename _Attributes::_CompletionDelegateType^ get()
+            _CompletionDelegateType^ get()
             {
-                return m_completedhandler;
+                return m_completedHandler;
             }
 
-            void set(typename _Attributes::_CompletionDelegateType^ _CompleteHandler)
+            void set(_CompletionDelegateType^ _CompletedHandler)
             {
-                m_completedhandler = _CompleteHandler;
+                m_completedHandler = _CompletedHandler;
             }
         }
 
     internal:
-        void invoke_progress_handler(typename _Attributes::_ProgressType progress)
+        void _InvokeProgressHandler(typename _Attributes::_ProgressType progress)
         {
-            if (m_progresshandler)
+            if (m_progressHandler)
             {
-                m_progresshandler->Invoke(this, progress);
+                m_progressHandler->Invoke(this, progress);
             }
         }
 
         // Called by promise_type::return_void for AsyncAction/AsyncActionWithProgress coroutine_traits
-        void invoke_completion()
+        void _InvokeCompletion()
         {
             // If m_status is already set to Canceled/Error, retain the state.
             if (Status == Windows::Foundation::AsyncStatus::Started)
                 Status = Windows::Foundation::AsyncStatus::Completed;
 
-            if (m_completedhandler)
+            if (m_completedHandler)
             {
-                m_completedhandler->Invoke(this, Status);
+                m_completedHandler->Invoke(this, Status);
             }
         }
 
         // Called by coroutine_traits::promise_type::set_exception to propagate the error.
         // There is no way to propagate the Exception message.
-        void set_error(Platform::Exception^ ex)
+        void _SetError(Platform::Exception^ ex)
         {
-            _AsyncInfoPromiseBase::set_error(ex);
-            invoke_completion();
+            _AsyncInfoPromiseBase::_SetError(ex);
+            _InvokeCompletion();
         }
 
-        typename _Attributes::_ProgressDelegateType^  volatile  m_progresshandler;
-        typename _Attributes::_CompletionDelegateType^  volatile  m_completedhandler;
+        _ProgressDelegateType^ m_progressHandler;
+        _CompletionDelegateType^ m_completedHandler;
     };
 
     template <typename _Attributes>
     ref class _AsyncOperationPromise :public _AsyncInfoPromiseBase, public _Attributes::_AsyncBaseType
     {
+        using _CompletionDelegateType = typename _Attributes::_CompletionDelegateType;
+        using _ReturnType = typename _Attributes::_ReturnType;
+
     public:
         void Close() override
         {
@@ -310,9 +326,13 @@ namespace winrt_await_adapters
 
         virtual property unsigned int Id
         {
-            virtual unsigned int get() override
+            unsigned int get() override
             {
                 return _AsyncInfoPromiseBase::Id;
+            }
+            void set(unsigned int id) override
+            {
+                _AsyncInfoPromiseBase::Id = id;
             }
         }
 
@@ -328,55 +348,58 @@ namespace winrt_await_adapters
             }
         }
 
-        virtual typename _Attributes::_ReturnType GetResults()
+        virtual _ReturnType GetResults()
         {
             return m_results;
         }
 
         // Get/set the method that handles the action/operation completed notification.
-        virtual property typename _Attributes::_CompletionDelegateType^ Completed
+        virtual property _CompletionDelegateType^ Completed
         {
-            typename _Attributes::_CompletionDelegateType^ get()
+            _CompletionDelegateType^ get()
             {
-                return m_completedhandler;
+                return m_completedHandler;
             }
 
-            void set(typename _Attributes::_CompletionDelegateType^ _CompleteHandler)
+            void set(_CompletionDelegateType^ _CompletedHandler)
             {
-                m_completedhandler = _CompleteHandler;
+                m_completedHandler = _CompletedHandler;
             }
         }
 
     internal:
         // Called by promise_type::return_value for AsyncOperation/AsyncOperationWithProgress coroutine_traits
-        void invoke_completion(typename _Attributes::_ReturnType result)
+        void _InvokeCompletion(_ReturnType result)
         {
             // If Status is already set to Canceled/Error, retain the state.
             if (Status == Windows::Foundation::AsyncStatus::Started)
                 Status = Windows::Foundation::AsyncStatus::Completed;
 
-            if (m_completedhandler)
+            if (m_completedHandler)
             {
                 m_results = result;
-                m_completedhandler->Invoke(this, Status);
+                m_completedHandler->Invoke(this, Status);
             }
         }
 
         // Called by coroutine_traits::promise_type::set_exception to propagate the error.
         // There is no way to propagate the Exception message.
-        void set_error(Platform::Exception^ ex)
+        void _SetError(Platform::Exception^ ex)
         {
-            _AsyncInfoPromiseBase::set_error(ex);
-            invoke_completion(nullptr);
+            _AsyncInfoPromiseBase::_SetError(ex);
+            _InvokeCompletion(nullptr);
         }
 
-        typename _Attributes::_ReturnType m_results;
-        typename _Attributes::_CompletionDelegateType^  volatile  m_completedhandler;
+        _ReturnType m_results;
+        _CompletionDelegateType^ m_completedHandler;
     };
-    
+
     template <typename _Attributes>
     ref class _AsyncOperationWithProgressPromise :public _AsyncInfoPromiseBase, public _Attributes::_AsyncBaseType
     {
+        using _CompletionDelegateType = typename _Attributes::_CompletionDelegateType;
+        using _ProgressDelegateType = typename _Attributes::_ProgressDelegateType;
+        using _ReturnType = typename _Attributes::_ReturnType;
     public:
         void Close() override
         {
@@ -398,9 +421,13 @@ namespace winrt_await_adapters
 
         virtual property unsigned int Id
         {
-            virtual unsigned int get() override
+            unsigned int get() override
             {
                 return _AsyncInfoPromiseBase::Id;
+            }
+            void set(unsigned int id) override
+            {
+                _AsyncInfoPromiseBase::Id = id;
             }
         }
 
@@ -416,72 +443,72 @@ namespace winrt_await_adapters
             }
         }
 
-        virtual typename _Attributes::_ReturnType GetResults()
+        virtual _ReturnType GetResults()
         {
             return m_results;
         }
 
         // Get/set the method that handles the action/operation completed notification.
-        virtual property typename _Attributes::_CompletionDelegateType^ Completed
+        virtual property _CompletionDelegateType^ Completed
         {
-            typename _Attributes::_CompletionDelegateType^ get()
+            _CompletionDelegateType^ get()
             {
-                return m_completedhandler;
+                return m_completedHandler;
             }
 
-            void set(typename _Attributes::_CompletionDelegateType^ _CompleteHandler)
+            void set(_CompletionDelegateType^ _CompletedHandler)
             {
-                m_completedhandler = _CompleteHandler;
+                m_completedHandler = _CompletedHandler;
             }
         }
 
-        virtual property typename _Attributes::_ProgressDelegateType^ Progress
+        virtual property _ProgressDelegateType^ Progress
         {
-            typename _Attributes::_ProgressDelegateType^ get()
+            _ProgressDelegateType^ get()
             {
-                return m_progresshandler;
+                return m_progressHandler;
             }
 
-            void set(typename _Attributes::_ProgressDelegateType^ progresshandler)
+            void set(_ProgressDelegateType^ progressHandler)
             {
-                m_progresshandler = progresshandler;
+                m_progressHandler = progressHandler;
             }
         }
 
     internal:
-        void invoke_progress_handler(typename _Attributes::_ProgressType progress)
+        void _InvokeProgressHandler(typename _Attributes::_ProgressType progress)
         {
-            if (m_progresshandler)
+            if (m_progressHandler)
             {
-                m_progresshandler->Invoke(this, progress);
+                m_progressHandler->Invoke(this, progress);
             }
         }
 
         // Called by promise_type::return_value for AsyncOperation/AsyncOperationWithProgress coroutine_traits
-        void invoke_completion(typename _Attributes::_ReturnType result)
+        void _InvokeCompletion(_ReturnType result)
         {
             // If m_status is already set to Canceled/Error, retain the state.
             if (Status == Windows::Foundation::AsyncStatus::Started)
                 Status = Windows::Foundation::AsyncStatus::Completed;
 
-            if (m_completedhandler)
+            if (m_completedHandler)
             {
                 m_results = result;
-                m_completedhandler->Invoke(this, Status);
+                m_completedHandler->Invoke(this, Status);
             }
         }
 
         // Called by coroutine_traits::promise_type::set_exception to propagate the error.
         // There is no way to propagate the Exception message.
-        void set_error(Platform::Exception^ ex)
+        void _SetError(Platform::Exception^ ex)
         {
-            _AsyncInfoPromiseBase::set_error(ex);
-            invoke_completion(nullptr);
+            _AsyncInfoPromiseBase::_SetError(ex);
+            _InvokeCompletion(nullptr);
         }
 
-        typename _Attributes::_ReturnType m_results;
-        typename _Attributes::_CompletionDelegateType^  volatile  m_completedhandler;
-        typename _Attributes::_ProgressDelegateType^  volatile  m_progresshandler;
+        _ReturnType m_results;
+        _CompletionDelegateType^ m_completedHandler;
+        _ProgressDelegateType^ m_progressHandler;
     };
 
     template<typename _ProgressType, typename _ReturnType, bool _TakesProgress>
@@ -534,18 +561,6 @@ namespace winrt_await_adapters
     template <typename TPromise, typename TProgress>
     class await_progress_reporter
     {
-    public:
-        await_progress_reporter(TPromise^ promise)
-        {
-            coroPromise = promise;
-        }
-
-        void report_progress(TProgress progressval)
-        {
-            ((TPromise<TProgress> ^)myProgress)->invoke_progress_handler(progressval);
-        }
-
-        TPromise^ coroPromise;
     };
 
     template <typename TProgress>
@@ -554,14 +569,30 @@ namespace winrt_await_adapters
     public:
         await_progress_reporter(Windows::Foundation::IAsyncActionWithProgress<TProgress>^ promise)
         {
-            coroPromise = promise;
-        }
-        void report_progress(TProgress progressval)
-        {
-            ((_AsyncActionWithProgressPromise<_AsyncAttributes<TProgress, void, true>> ^)coroPromise)->invoke_progress_handler(progressval);
+            m_promise = promise;
         }
 
-        Windows::Foundation::IAsyncActionWithProgress<TProgress>^ coroPromise;
+        void report_progress(TProgress progressval)
+        {
+            static_cast<_AsyncActionWithProgressPromise<_AsyncAttributes<TProgress, void, true>> ^>(m_promise)->_InvokeProgressHandler(progressval);
+        }
+
+        bool await_ready()
+        {
+            return false;
+        }
+
+        void await_suspend(std::experimental::coroutine_handle<> h)
+        {
+            h();
+        }
+
+        await_progress_reporter<Windows::Foundation::IAsyncActionWithProgress<TProgress>, TProgress>& await_resume()
+        {
+            return *this;
+        }
+    private:
+        Windows::Foundation::IAsyncActionWithProgress<TProgress>^ m_promise;
     };
 
 
@@ -571,200 +602,174 @@ namespace winrt_await_adapters
     public:
         await_progress_reporter(Windows::Foundation::IAsyncOperationWithProgress<TResult, TProgress>^ promise)
         {
-            coroPromise = promise;
-        }
-        void report_progress(TProgress progressval)
-        {
-            ((_AsyncOperationWithProgressPromise<_AsyncAttributes<TProgress, TResult, true>> ^)coroPromise)->invoke_progress_handler(progressval);
+            m_promise = promise;
         }
 
-        Windows::Foundation::IAsyncOperationWithProgress<TResult, TProgress>^ coroPromise;
+        void report_progress(TProgress progressval)
+        {
+            static_cast<_AsyncOperationWithProgressPromise<_AsyncAttributes<TProgress, TResult, true>> ^>(m_promise)->_InvokeProgressHandler(progressval);
+        }
+
+        bool await_ready()
+        {
+            return false;
+        }
+
+        void await_suspend(std::experimental::coroutine_handle<> h)
+        {
+            h();
+        }
+
+        await_progress_reporter<Windows::Foundation::IAsyncOperationWithProgress<TResult, TProgress>, TProgress>& await_resume()
+        {
+            return *this;
+        }
+
+    private:
+        Windows::Foundation::IAsyncOperationWithProgress<TResult, TProgress>^ m_promise;
     };
 
     //
-    // await on get_progress_reporter<IAsyncType, ProgressType> to get a handle to the await_progress_reporter 
+    // await on get_progress_reporter<ProgressType> to get a handle to the await_progress_reporter 
     // Applications can use await_progress_reporter::report_progress for progress reporting.
     // The await will obtain a handle to the coroutine s promise (which is the _AsyncActionWithProgressPromise or _AsyncOperationWithProgressPromise  
     // and can invoke the corresponding progress handler
+    // Example:
+    // auto pr = co_await get_progress_reporter<double>();
+    // pr.report_progress(98.0);
     //
-    template <typename TPromise, typename TProgress>
-    struct get_progress_reporter {};
-
-    template <typename TPromise, typename TProgress>
-    auto operator await (get_progress_reporter<TPromise, TProgress>)
+    template <typename TProgress>
+    struct get_progress_reporter 
     {
-        struct Awaiter
+    };
+
+    template<typename _Attributes>
+    struct _coroutine_promise_base
+    {
+        typename _Attributes::_AsyncPromiseType^ result;
+
+        _coroutine_promise_base()
         {
-            using Promise = typename std::experimental::coroutine_traits<TPromise^>::promise_type;
-            Promise* promise;
-            bool await_ready()
+            result = ref new typename _Attributes::_AsyncPromiseType();
+        }
+
+        std::experimental::suspend_never initial_suspend() const
+        {
+            return {};
+        }
+
+        std::experimental::suspend_never final_suspend() const
+        {
+            return {};
+        }
+
+        typename _Attributes::_AsyncBaseType^ get_return_object()
+        {
+            return result;
+        }
+
+        void set_exception(const std::exception_ptr &eptr)
+        {
+            try
             {
-                return false;
+                if (eptr)
+                {
+                    std::rethrow_exception(eptr);
+                }
             }
-
-            void await_suspend(std::experimental::coroutine_handle<Promise> h)
+            catch (Platform::Exception^ ex)
             {
-                promise = &h.promise();
-                h();
+                result->_SetError(ex);
             }
-
-            await_progress_reporter<TPromise, TProgress> await_resume()
+            catch (...)
             {
-                return await_progress_reporter<TPromise, TProgress>(promise->result);
-            };
-        };
+                Platform::Exception^ ex = ref new Platform::Exception(E_FAIL);
+                result->_SetError(ex);
+            }
+        }
+    };
 
-        return Awaiter{};
-    }
+    template<typename _Attributes>
+    struct _coroutine_promise_void :_coroutine_promise_base<_Attributes>
+    {
+        void return_void()
+        {
+            result->_InvokeCompletion();
+        }
+    };
+
+    template<typename _Attributes>
+    struct _coroutine_promise_void_with_progress : _coroutine_promise_void<_Attributes>
+    {
+        await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType> await_transform(get_progress_reporter<typename _Attributes::_ProgressType>)
+        {
+            return await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType>(result);
+        }
+
+        template <typename _Uty>
+        _Uty && await_transform(_Uty &&_Whatever)
+        {
+            return _STD forward<_Uty>(_Whatever);
+        }
+    };
+
+    template<typename _Attributes>
+    struct _coroutine_promise_value :_coroutine_promise_base<_Attributes>
+    {
+        void return_value(const typename _Attributes::_ReturnType &_Val)
+        {
+            result->_InvokeCompletion(_Val);
+        }
+    };
+
+    template<typename _Attributes>
+    struct _coroutine_promise_value_with_progress : _coroutine_promise_value<_Attributes>
+    {
+        await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType> await_transform(get_progress_reporter<typename _Attributes::_ProgressType>)
+        {
+            return await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType>(result);
+        }
+
+        template <typename _Uty>
+        _Uty && await_transform(_Uty &&_Whatever)
+        {
+            return _STD forward<_Uty>(_Whatever);
+        }
+    };
 }
 
 namespace std
 {
     namespace experimental
     {
-        template<typename _Attributes>
-        struct _coroutine_traits
-        {
-            struct promise_type
-            {
-                typename _Attributes::_AsyncPromiseType^ result;
-
-                promise_type()
-                {
-                    result = ref new typename _Attributes::_AsyncPromiseType();
-                }
-
-                void return_void()
-                {
-                    result->invoke_completion();
-                }
-
-                bool initial_suspend() const 
-                { 
-                    return false; 
-                }
-             
-                bool final_suspend() const 
-                { 
-                    return false; 
-                }
-
-                typename _Attributes::_AsyncBaseType^ get_return_object()
-                {
-                    return result;
-                }
-
-                void set_exception(const std::exception_ptr &eptr)
-                {
-                    try
-                    {
-                        if (eptr)
-                        {
-                            std::rethrow_exception(eptr);
-                        }
-                    }
-                    catch (Platform::Exception^ ex)
-                    {
-                        result->set_error(ex);
-                    }
-                    catch (...)
-                    {
-                        Platform::Exception^ ex = ref new Platform::Exception(E_FAIL);
-                        result->set_error(ex);
-                    }
-                }
-            };
-        };
-
-        template<typename _Attributes>
-        struct _coroutine_traits_with_ret
-        {
-            struct promise_type
-            {
-                typename _Attributes::_AsyncPromiseType^ result;
-
-                promise_type()
-                {
-                    result = ref new typename _Attributes::_AsyncPromiseType();
-                }
-
-                void return_value(const typename _Attributes::_ReturnType &_Val)
-                {
-                    result->invoke_completion(_Val);
-                }
-
-                bool initial_suspend() const 
-                { 
-                    return false; 
-                }
-                
-                bool final_suspend() const 
-                { 
-                    return false; 
-                }
-
-                typename _Attributes::_AsyncBaseType^ get_return_object()
-                {
-                    return result;
-                }
-
-                void set_exception(const std::exception_ptr &eptr)
-                {
-                    // Handle eptr
-                    try
-                    {
-                        if (eptr)
-                        {
-                            std::rethrow_exception(eptr);
-                        }
-                    }
-                    catch (Platform::Exception^ ex)
-                    {
-                        result->set_error(ex);
-                    }
-                    catch (...)
-                    {
-                        Platform::Exception^ ex = ref new Platform::Exception(E_FAIL);
-                        result->set_error(ex);
-                    }
-                }
-            };
-        };
-
         // Specialization of coroutine_traits for functions with IAsyncAction return type.
         template <typename... _TArgs>
-        struct coroutine_traits<Windows::Foundation::IAsyncAction^, _TArgs...> :
-            _coroutine_traits<winrt_await_adapters::_AsyncAttributes<void, void, false>>
+        struct coroutine_traits<Windows::Foundation::IAsyncAction^, _TArgs...>
         {
-            using promise_type = typename _coroutine_traits::promise_type;
+            using promise_type = typename winrt_await_adapters::_coroutine_promise_void<winrt_await_adapters::_AsyncAttributes<void, void, false>>;
         };
 
         // Specialization of coroutine_traits for functions with IAsyncActionWithProgress return type.
         template <typename TProgress, typename... _TArgs>
-        struct std::experimental::coroutine_traits<Windows::Foundation::IAsyncActionWithProgress<TProgress>^, _TArgs...> :
-            _coroutine_traits<winrt_await_adapters::_AsyncAttributes<TProgress, void, true>>
+        struct std::experimental::coroutine_traits<Windows::Foundation::IAsyncActionWithProgress<TProgress>^, _TArgs...>
         {
-            using promise_type = typename _coroutine_traits::promise_type;
+            using promise_type = typename winrt_await_adapters::_coroutine_promise_void_with_progress<winrt_await_adapters::_AsyncAttributes<TProgress, void, true>>;
         };
 
         // Specialization of coroutine_traits for functions with IAsyncOperationWithProgress return type.
         template <typename TProgress, typename TResult, typename... _TArgs>
-        struct std::experimental::coroutine_traits<Windows::Foundation::IAsyncOperationWithProgress<TResult, TProgress>^, _TArgs...> :
-            _coroutine_traits_with_ret<winrt_await_adapters::_AsyncAttributes<TProgress, TResult, true>>
+        struct std::experimental::coroutine_traits<Windows::Foundation::IAsyncOperationWithProgress<TResult, TProgress>^, _TArgs...>
         {
-            using promise_type = typename _coroutine_traits_with_ret::promise_type;
+            using promise_type = typename winrt_await_adapters::_coroutine_promise_value_with_progress<winrt_await_adapters::_AsyncAttributes<TProgress, TResult, true>>;
         };
 
         // Specialization of coroutine_traits for functions with IAsyncOperation return type.
         template <typename TResult, typename... _TArgs>
-        struct std::experimental::coroutine_traits<Windows::Foundation::IAsyncOperation<TResult>^, _TArgs...> :
-            _coroutine_traits_with_ret<winrt_await_adapters::_AsyncAttributes<void, TResult, false>>
+        struct std::experimental::coroutine_traits<Windows::Foundation::IAsyncOperation<TResult>^, _TArgs...>
         {
-            using promise_type = typename _coroutine_traits_with_ret::promise_type;
+            using promise_type = typename winrt_await_adapters::_coroutine_promise_value<winrt_await_adapters::_AsyncAttributes<void, TResult, false>>;
         };
     }
-
-#endif
 }
-
+#endif
 #endif
