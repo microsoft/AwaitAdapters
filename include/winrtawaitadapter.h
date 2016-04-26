@@ -559,9 +559,7 @@ namespace winrt_await_adapters
     };
 
     template <typename TPromise, typename TProgress>
-    class await_progress_reporter
-    {
-    };
+    class await_progress_reporter;
 
     template <typename TProgress>
     class await_progress_reporter<Windows::Foundation::IAsyncActionWithProgress<TProgress>, TProgress>
@@ -579,15 +577,14 @@ namespace winrt_await_adapters
 
         bool await_ready()
         {
-            return false;
+            return true;
         }
 
-        void await_suspend(std::experimental::coroutine_handle<> h)
+        void await_suspend(std::experimental::coroutine_handle<>)
         {
-            h();
         }
 
-        await_progress_reporter<Windows::Foundation::IAsyncActionWithProgress<TProgress>, TProgress>& await_resume()
+        await_progress_reporter<Windows::Foundation::IAsyncActionWithProgress<TProgress>, TProgress> await_resume()
         {
             return *this;
         }
@@ -612,15 +609,14 @@ namespace winrt_await_adapters
 
         bool await_ready()
         {
-            return false;
+            return true;
         }
 
-        void await_suspend(std::experimental::coroutine_handle<> h)
+        void await_suspend(std::experimental::coroutine_handle<>)
         {
-            h();
         }
 
-        await_progress_reporter<Windows::Foundation::IAsyncOperationWithProgress<TResult, TProgress>, TProgress>& await_resume()
+        await_progress_reporter<Windows::Foundation::IAsyncOperationWithProgress<TResult, TProgress>, TProgress> await_resume()
         {
             return *this;
         }
@@ -703,7 +699,7 @@ namespace winrt_await_adapters
     {
         await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType> await_transform(get_progress_reporter<typename _Attributes::_ProgressType>)
         {
-            return await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType>(result);
+            return{ result };
         }
 
         template <typename _Uty>
@@ -727,7 +723,7 @@ namespace winrt_await_adapters
     {
         await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType> await_transform(get_progress_reporter<typename _Attributes::_ProgressType>)
         {
-            return await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType>(result);
+            return{ result };
         }
 
         template <typename _Uty>
