@@ -18,7 +18,7 @@ namespace AwaitAdapterTest
         auto UIContext = await_resume_context::current();
         co_await await_resume_context::any().get_awaitable();
 
-        auto pr = co_await get_progress_reporter<double>();
+        auto pr = co_await get_progress_reporter();
 
         // Ensure that the input values are in range.
         if (first < 0 || last < 0)

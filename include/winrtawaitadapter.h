@@ -626,7 +626,7 @@ namespace winrt_await_adapters
     };
 
     //
-    // await on get_progress_reporter<ProgressType> to get a handle to the await_progress_reporter 
+    // await on get_progress_reporter to get a handle to the await_progress_reporter 
     // Applications can use await_progress_reporter::report_progress for progress reporting.
     // The await will obtain a handle to the coroutine s promise (which is the _AsyncActionWithProgressPromise or _AsyncOperationWithProgressPromise  
     // and can invoke the corresponding progress handler
@@ -634,7 +634,6 @@ namespace winrt_await_adapters
     // auto pr = co_await get_progress_reporter<double>();
     // pr.report_progress(98.0);
     //
-    template <typename TProgress>
     struct get_progress_reporter 
     {
     };
@@ -697,7 +696,7 @@ namespace winrt_await_adapters
     template<typename _Attributes>
     struct _coroutine_promise_void_with_progress : _coroutine_promise_void<_Attributes>
     {
-        await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType> await_transform(get_progress_reporter<typename _Attributes::_ProgressType>)
+        await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType> await_transform(get_progress_reporter)
         {
             return{ result };
         }
@@ -721,7 +720,7 @@ namespace winrt_await_adapters
     template<typename _Attributes>
     struct _coroutine_promise_value_with_progress : _coroutine_promise_value<_Attributes>
     {
-        await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType> await_transform(get_progress_reporter<typename _Attributes::_ProgressType>)
+        await_progress_reporter<typename _Attributes::_AsyncBaseType, typename _Attributes::_ProgressType> await_transform(get_progress_reporter)
         {
             return{ result };
         }
@@ -732,6 +731,16 @@ namespace winrt_await_adapters
             return _STD forward<_Uty>(_Whatever);
         }
     };
+}
+
+template <typename T>
+auto operator * (concurrency::cancellation_token ct, T^ async)
+{
+	ct.register_callback([=]()
+    {
+        async->Cancel();
+    });
+    return async;
 }
 
 namespace std
