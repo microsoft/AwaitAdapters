@@ -21,6 +21,7 @@
 #include <exception>
 #include <winerror.h>
 #include <intrin.h>
+#include <pplcancellation_token.h>
 #include <experimental\coroutine>
 namespace winrt_await_adapters
 {
@@ -387,7 +388,7 @@ namespace winrt_await_adapters
         void _SetError(Platform::Exception^ ex)
         {
             _AsyncInfoPromiseBase::_SetError(ex);
-            _InvokeCompletion(nullptr);
+            _InvokeCompletion(_ReturnType {});
         }
 
         _ReturnType m_results;
@@ -503,7 +504,7 @@ namespace winrt_await_adapters
         void _SetError(Platform::Exception^ ex)
         {
             _AsyncInfoPromiseBase::_SetError(ex);
-            _InvokeCompletion(nullptr);
+            _InvokeCompletion(_ReturnType {});
         }
 
         _ReturnType m_results;

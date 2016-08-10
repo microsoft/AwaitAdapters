@@ -89,5 +89,32 @@ namespace AwaitAdapterTest
             auto ret = ev.wait(IASYNC_AWAIT_TEST_TIMEOUT);
             Assert::IsFalse(failed, L"IAsyncOperation status != Cancelled.");
         }
+
+        IAsyncOperation<uint64>^ GetEmptyFileSizeAsync()
+        {
+            auto appFolder = Windows::Storage::ApplicationData::Current->LocalFolder;
+            auto newFile = co_await appFolder->CreateFileAsync("newfile.txt", Windows::Storage::CreationCollisionOption::ReplaceExisting);
+            auto properties = co_await newFile->GetBasicPropertiesAsync();
+            return properties->Size;
+        }
+
+        TEST_METHOD(AsyncOperationWithNonPtrReturnType)
+        {
+            bool failed = false;
+            event ev;
+
+            auto op = GetEmptyFileSizeAsync();
+            op->Completed = ref new AsyncOperationCompletedHandler<uint64>([&](IAsyncOperation<uint64>^ op, AsyncStatus status)
+            {
+                auto size = op->GetResults();
+                if (status != AsyncStatus::Completed || size != 0)
+                    failed = true;
+
+                ev.set();
+            });
+
+            ev.wait();
+            Assert::IsTrue(failed == false, L"IAsyncOperation did not complete successfully.");
+        }
     };
 }
